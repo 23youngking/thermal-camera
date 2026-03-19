@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>热成像摄像头</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --neon: #00ffe7;
+    --hot: #ff4400;
+    --warm: #ffaa00;
+    --bg: #080c10;
+    --panel: #0d1419;
+    --border: #1a2a35;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--neon);
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+    height: 100dvh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #hud-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  .hud-label {
+    font-size: 11px;
+    color: #4a8fa0;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .hud-value {
+    font-size: 14px;
+    color: var(--neon);
+    font-weight: 500;
+  }
+
+  #temp-display {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--hot);
+    text-shadow: 0 0 20px rgba(255,68,0,0.6);
+    letter-spacing: 1px;
+  }
+
+  #main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #camera-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    display: none;
+  }
+
+  #full-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #overlay-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  #clip-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  #start-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: transparent;
+    border: 2px solid var(--neon);
+    color: var(--neon);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 3px;
+    padding: 16px 32px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    z-index: 20;
+  }
+
+  #start-btn:hover, #start-btn:active {
+    background: rgba(0,255,231,0.1);
+    box-shadow: 0 0 30px rgba(0,255,231,0.3);
+  }
+
+  #start-btn.hidden { display: none; }
+
+  .corner-handle {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    z-index: 30;
+    cursor: grab;
+    touch-action: none;
+    transform: translate(-50%, -50%);
+  }
+
+  .corner-handle:active { cursor: grabbing; }
+
+  .corner-handle svg { width: 100%; height: 100%; }
+
+  #hud-bottom {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+    z-index: 10;
+    gap: 8px;
+  }
+
+  .mode-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: #4a8fa0;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 6px 12px;
+    cursor: pointer;
+    text-transform: uppercase;
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+
+  .mode-btn.active {
+    border-color: var(--neon);
+    color: var(--neon);
+    background: rgba(0,255,231,0.08);
+  }
+
+  .mode-btn:active { transform: scale(0.95); }
+
+  #crosshair {
+    position: absolute;
+    pointer-events: none;
+    z-index: 25;
+    display: none;
+  }
+
+  #scanning-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(0,255,231,0.6), transparent);
+    pointer-events: none;
+    z-index: 24;
+    animation: scan 3s linear infinite;
+    display: none;
+  }
+
+  @keyframes scan {
+    0% { top: 0; opacity: 0; }
+    5% { opacity: 1; }
+    95% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  #colorbar {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 160px;
+    border: 1px solid rgba(0,255,231,0.3);
+    z-index: 20;
+    border-radius: 2px;
+    overflow: hidden;
+    display: none;
+  }
+
+  #colorbar canvas { width: 100%; height: 100%; }
+
+  .bar-label {
+    position: absolute;
+    right: 28px;
+    font-size: 10px;
+    color: #4a8fa0;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  #label-hot { top: 8px; }
+  #label-cold { bottom: 8px; }
+
+  #info-overlay {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    font-size: 10px;
+    color: rgba(0,255,231,0.4);
+    pointer-events: none;
+    z-index: 20;
+    line-height: 1.6;
+    display: none;
+  }
+
+  #no-camera-msg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #4a8fa0;
+    font-size: 13px;
+    line-height: 2;
+    display: none;
+    z-index: 20;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud-top">
+  <div>
+    <div class="hud-label">系统</div>
+    <div class="hud-value">THERMAL-V1</div>
+  </div>
+  <div style="text-align:center">
+    <div class="hud-label">中心温度</div>
+    <div id="temp-display">-- °C</div>
+  </div>
+  <div style="text-align:right">
+    <div class="hud-label">模式</div>
+    <div class="hud-value" id="mode-label">IRON</div>
+  </div>
+</div>
+
+<div id="main">
+  <video id="camera-bg" autoplay playsinline muted></video>
+  <canvas id="full-canvas"></canvas>
+  <canvas id="clip-canvas"></canvas>
+  <canvas id="overlay-canvas"></canvas>
+
+  <div id="scanning-line"></div>
+  <div id="colorbar">
+    <canvas id="colorbar-canvas" width="14" height="160"></canvas>
+  </div>
+  <div class="bar-label" id="label-hot" style="display:none">热</div>
+  <div class="bar-label" id="label-cold" style="display:none">冷</div>
+  <div id="info-overlay"></div>
+  <div id="no-camera-msg">无法访问摄像头<br>请检查权限后刷新</div>
+
+  <div class="corner-handle" id="h-tl" data-corner="tl">
+    <svg viewBox="0 0 36 36"><polyline points="18,4 4,4 4,18" fill="none" stroke="#00ffe7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="4" r="4" fill="#00ffe7"/></svg>
+  </div>
+  <div class="corner-handle" id="h-tr" data-corner="tr">
+    <svg viewBox="0 0 36 36"><polyline points="18,4 32,4 32,18" fill="none" stroke="#00ffe7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="4" r="4" fill="#00ffe7"/></svg>
+  </div>
+  <div class="corner-handle" id="h-bl" data-corner="bl">
+    <svg viewBox="0 0 36 36"><polyline points="18,32 4,32 4,18" fill="none" stroke="#00ffe7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="32" r="4" fill="#00ffe7"/></svg>
+  </div>
+  <div class="corner-handle" id="h-br" data-corner="br">
+    <svg viewBox="0 0 36 36"><polyline points="18,32 32,32 32,18" fill="none" stroke="#00ffe7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="32" r="4" fill="#00ffe7"/></svg>
+  </div>
+
+  <button id="start-btn">开启摄像头</button>
+</div>
+
+<div id="hud-bottom">
+  <button class="mode-btn active" data-mode="iron">铁红</button>
+  <button class="mode-btn" data-mode="rainbow">彩虹</button>
+  <button class="mode-btn" data-mode="cold">冷蓝</button>
+  <button class="mode-btn" data-mode="grey">灰度</button>
+  <button class="mode-btn" data-mode="lava">熔岩</button>
+</div>
+
+<script>
+const video = document.getElementById('camera-bg');
+const fullCanvas = document.getElementById('full-canvas');
+const clipCanvas = document.getElementById('clip-canvas');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+const clipCtx = clipCanvas.getContext('2d');
+const overlayCtx = overlayCanvas.getContext('2d');
+const startBtn = document.getElementById('start-btn');
+const tempDisplay = document.getElementById('temp-display');
+const modeLabel = document.getElementById('mode-label');
+const infoOverlay = document.getElementById('info-overlay');
+const scanLine = document.getElementById('scanning-line');
+const colorbar = document.getElementById('colorbar');
+const colorbarCanvas = document.getElementById('colorbar-canvas');
+const colorbarCtx = colorbarCanvas.getContext('2d');
+const labelHot = document.getElementById('label-hot');
+const labelCold = document.getElementById('label-cold');
+const noCameraMsg = document.getElementById('no-camera-msg');
+
+let W = 0, H = 0;
+let streaming = false;
+let currentMode = 'iron';
+let frameCount = 0;
+
+const corners = {
+  tl: { x: 0.1, y: 0.15 },
+  tr: { x: 0.9, y: 0.15 },
+  bl: { x: 0.1, y: 0.85 },
+  br: { x: 0.9, y: 0.85 }
+};
+
+const handles = {
+  tl: document.getElementById('h-tl'),
+  tr: document.getElementById('h-tr'),
+  bl: document.getElementById('h-bl'),
+  br: document.getElementById('h-br'),
+};
+
+function resizeAll() {
+  const main = document.getElementById('main');
+  W = main.offsetWidth;
+  H = main.offsetHeight;
+  [fullCanvas, clipCanvas, overlayCanvas].forEach(c => {
+    c.width = W; c.height = H;
+  });
+  updateHandles();
+}
+
+function updateHandles() {
+  for (const [key, h] of Object.entries(handles)) {
+    h.style.left = (corners[key].x * W) + 'px';
+    h.style.top = (corners[key].y * H) + 'px';
+  }
+}
+
+resizeAll();
+window.addEventListener('resize', resizeAll);
+
+const MODES = {
+  iron: v => {
+    if (v < 0.33) {
+      const t = v / 0.33;
+      return [lerp(0,180,t), 0, lerp(30,160,t)];
+    } else if (v < 0.66) {
+      const t = (v-0.33)/0.33;
+      return [lerp(180,255,t), lerp(0,100,t), lerp(160,0,t)];
+    } else {
+      const t = (v-0.66)/0.34;
+      return [255, lerp(100,255,t), lerp(0,200,t)];
+    }
+  },
+  rainbow: v => {
+    const h = (1 - v) * 240;
+    return hslToRgb(h/360, 1, 0.5);
+  },
+  cold: v => {
+    if (v < 0.5) {
+      const t = v/0.5;
+      return [0, lerp(0,80,t), lerp(40,200,t)];
+    } else {
+      const t = (v-0.5)/0.5;
+      return [lerp(0,200,t), lerp(80,220,t), lerp(200,255,t)];
+    }
+  },
+  grey: v => {
+    const g = Math.round(v*255);
+    return [g, g, g];
+  },
+  lava: v => {
+    if (v < 0.4) {
+      const t = v/0.4;
+      return [lerp(10,180,t), 0, 0];
+    } else if (v < 0.75) {
+      const t = (v-0.4)/0.35;
+      return [lerp(180,255,t), lerp(0,120,t), 0];
+    } else {
+      const t = (v-0.75)/0.25;
+      return [255, lerp(120,255,t), lerp(0,150,t)];
+    }
+  }
+};
+
+function lerp(a, b, t) { return a + (b-a)*t; }
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q-p)*6*t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q-p)*(2/3-t)*6;
+      return p;
+    };
+    const q = l < 0.5 ? l*(1+s) : l+s-l*s;
+    const p = 2*l-q;
+    r = hue2rgb(p,q,h+1/3); g = hue2rgb(p,q,h); b = hue2rgb(p,q,h-1/3);
+  }
+  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+}
+
+function drawColorbar() {
+  const grad = colorbarCtx.createLinearGradient(0, 160, 0, 0);
+  const steps = 20;
+  for (let i = 0; i <= steps; i++) {
+    const v = i/steps;
+    const [r,g,b] = MODES[currentMode](v);
+    grad.addColorStop(v, `rgb(${r},${g},${b})`);
+  }
+  colorbarCtx.fillStyle = grad;
+  colorbarCtx.fillRect(0, 0, 14, 160);
+}
+
+function pointInQuad(px, py, tl, tr, br, bl) {
+  function sign(p1, p2, p3) {
+    return (p1.x-p3.x)*(p2.y-p3.y)-(p2.x-p3.x)*(p1.y-p3.y);
+  }
+  const p = {x:px, y:py};
+  const d1 = sign(p, tl, tr);
+  const d2 = sign(p, tr, br);
+  const d3 = sign(p, br, bl);
+  const d4 = sign(p, bl, tl);
+  const hasNeg = (d1<0)||(d2<0)||(d3<0)||(d4<0);
+  const hasPos = (d1>0)||(d2>0)||(d3>0)||(d4>0);
+  return !(hasNeg && hasPos);
+}
+
+function bilinearUV(px, py, tl, tr, br, bl) {
+  const dx = px - tl.x, dy = py - tl.y;
+  const w = tr.x - tl.x, h = bl.y - tl.y;
+  return { u: w > 0 ? dx/w : 0, v: h > 0 ? dy/h : 0 };
+}
+
+function processFrame() {
+  if (!streaming) return;
+  frameCount++;
+
+  const vw = video.videoWidth || W;
+  const vh = video.videoHeight || H;
+
+  fullCtx.save();
+  fullCtx.scale(-1, 1);
+  fullCtx.drawImage(video, -W, 0, W, H);
+  fullCtx.restore();
+
+  const raw = fullCtx.getImageData(0, 0, W, H);
+  const thermal = fullCtx.createImageData(W, H);
+
+  const tl = { x: corners.tl.x*W, y: corners.tl.y*H };
+  const tr = { x: corners.tr.x*W, y: corners.tr.y*H };
+  const bl = { x: corners.bl.x*W, y: corners.bl.y*H };
+  const br = { x: corners.br.x*W, y: corners.br.y*H };
+
+  let centerV = 0;
+  const cx = W/2, cy = H/2;
+
+  for (let py = 0; py < H; py++) {
+    for (let px = 0; px < W; px++) {
+      const i = (py * W + px) * 4;
+      const r = raw.data[i], g = raw.data[i+1], b = raw.data[i+2];
+      const brightness = (r*0.299 + g*0.587 + b*0.114) / 255;
+
+      if (pointInQuad(px, py, tl, tr, br, bl)) {
+        const v = brightness;
+        if (Math.abs(px-cx) < 3 && Math.abs(py-cy) < 3) centerV = v;
+        const [tr2, tg, tb] = MODES[currentMode](v);
+        thermal.data[i] = tr2;
+        thermal.data[i+1] = tg;
+        thermal.data[i+2] = tb;
+        thermal.data[i+3] = 255;
+      } else {
+        thermal.data[i] = Math.round(r*0.15);
+        thermal.data[i+1] = Math.round(g*0.15);
+        thermal.data[i+2] = Math.round(b*0.15);
+        thermal.data[i+3] = 255;
+      }
+    }
+  }
+
+  clipCtx.putImageData(thermal, 0, 0);
+
+  const fakeCelsius = Math.round(20 + centerV * 25);
+  tempDisplay.textContent = fakeCelsius + ' °C';
+  const pct = Math.round(centerV * 100);
+  infoOverlay.textContent = `亮度: ${pct}%  帧: ${frameCount}`;
+
+  drawOverlay(tl, tr, br, bl);
+  requestAnimationFrame(processFrame);
+}
+
+function drawOverlay(tl, tr, br, bl) {
+  overlayCtx.clearRect(0, 0, W, H);
+
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(tl.x, tl.y);
+  overlayCtx.lineTo(tr.x, tr.y);
+  overlayCtx.lineTo(br.x, br.y);
+  overlayCtx.lineTo(bl.x, bl.y);
+  overlayCtx.closePath();
+  overlayCtx.strokeStyle = 'rgba(0,255,231,0.8)';
+  overlayCtx.lineWidth = 1.5;
+  overlayCtx.setLineDash([6,3]);
+  overlayCtx.stroke();
+  overlayCtx.setLineDash([]);
+
+  const cx = W/2, cy = H/2;
+  const size = 14;
+  overlayCtx.strokeStyle = 'rgba(0,255,231,0.7)';
+  overlayCtx.lineWidth = 1;
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(cx-size, cy); overlayCtx.lineTo(cx+size, cy);
+  overlayCtx.moveTo(cx, cy-size); overlayCtx.lineTo(cx, cy+size);
+  overlayCtx.stroke();
+  overlayCtx.beginPath();
+  overlayCtx.arc(cx, cy, 4, 0, Math.PI*2);
+  overlayCtx.strokeStyle = 'rgba(255,68,0,0.9)';
+  overlayCtx.stroke();
+
+  if (frameCount % 2 === 0) {
+    overlayCtx.fillStyle = 'rgba(0,255,231,0.06)';
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(tl.x, tl.y);
+    overlayCtx.lineTo(tr.x, tr.y);
+    overlayCtx.lineTo(br.x, br.y);
+    overlayCtx.lineTo(bl.x, bl.y);
+    overlayCtx.closePath();
+    overlayCtx.fill();
+  }
+}
+
+startBtn.addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = stream;
+    await video.play();
+    startBtn.classList.add('hidden');
+    streaming = true;
+    scanLine.style.display = 'block';
+    colorbar.style.display = 'block';
+    labelHot.style.display = 'block';
+    labelCold.style.display = 'block';
+    infoOverlay.style.display = 'block';
+    drawColorbar();
+    processFrame();
+  } catch(e) {
+    startBtn.classList.add('hidden');
+    noCameraMsg.style.display = 'block';
+    console.error(e);
+  }
+});
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+    modeLabel.textContent = btn.textContent.toUpperCase();
+    drawColorbar();
+  });
+});
+
+let dragging = null;
+let dragOffset = { x: 0, y: 0 };
+
+function startDrag(corner, clientX, clientY) {
+  dragging = corner;
+  const h = handles[corner];
+  const rect = h.getBoundingClientRect();
+  dragOffset.x = clientX - rect.left;
+  dragOffset.y = clientY - rect.top;
+}
+
+function moveDrag(clientX, clientY) {
+  if (!dragging) return;
+  const main = document.getElementById('main');
+  const rect = main.getBoundingClientRect();
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+  const margin = 0.05;
+  corners[dragging].x = Math.max(margin, Math.min(1-margin, px/W));
+  corners[dragging].y = Math.max(margin, Math.min(1-margin, py/H));
+  updateHandles();
+}
+
+function endDrag() { dragging = null; }
+
+for (const [key, h] of Object.entries(handles)) {
+  h.addEventListener('mousedown', e => { e.preventDefault(); startDrag(key, e.clientX, e.clientY); });
+  h.addEventListener('touchstart', e => { e.preventDefault(); startDrag(key, e.touches[0].clientX, e.touches[0].clientY); }, { passive:false });
+}
+
+window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+window.addEventListener('mouseup', endDrag);
+window.addEventListener('touchmove', e => {
+  if (dragging) { e.preventDefault(); moveDrag(e.touches[0].clientX, e.touches[0].clientY); }
+}, { passive:false });
+window.addEventListener('touchend', endDrag);
+</script>
+</body>
+</html>
